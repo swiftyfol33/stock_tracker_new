@@ -1,5 +1,5 @@
 "use client";
-
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Input } from "@/components/ui/input";
@@ -525,47 +525,12 @@ const StockChecker = () => {
             </CardHeader>
             <CardContent>
               {positions.size > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Symbol</TableHead>
-                      <TableHead>Shares</TableHead>
-                      <TableHead>Purchase Price</TableHead>
-                      <TableHead>Current Price</TableHead>
-                      <TableHead>% Change</TableHead>
-                      <TableHead>Total Value</TableHead>
-                      <TableHead>Unrealized P/L</TableHead>
-                      <TableHead>Realized P/L</TableHead>
-                      <TableHead>Purchase Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Array.from(positions.entries()).map(([symbol, data], index) => (
-                      <TableRow key={index}>
-                        <TableCell className="font-medium">{symbol}</TableCell>
-                        <TableCell>{data.amount}</TableCell>
-                        <TableCell>${data.purchasePrice}</TableCell>
-                        <TableCell>${data.currentPrice}</TableCell>
-                        <TableCell className="flex items-center">
-                          {Number(data.percentageChange) > 0 ? (
-                            <TrendingUp className="mr-1 h-4 w-4 text-green-500" />
-                          ) : (
-                            <TrendingDown className="mr-1 h-4 w-4 text-red-500" />
-                          )}
-                          <span className={Number(data.percentageChange) > 0 ? "text-green-500" : "text-red-500"}>
-                            {data.percentageChange}%
-                          </span>
-                        </TableCell>
-                        <TableCell>${data.totalValue}</TableCell>
-                        <TableCell className={Number(data.profitLoss) > 0 ? "text-green-500" : "text-red-500"}>
-                          ${Math.abs(data.profitLoss)}
-                        </TableCell>
-                        <TableCell className={Number(realizedPnL.get(symbol) || 0) > 0 ? "text-green-500" : "text-red-500"}>
-                          ${Math.abs(realizedPnL.get(symbol) || 0)}
-                        </TableCell>
-                        <TableCell>{formatDate(data.purchaseDate)}</TableCell>
-                        <TableCell>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Array.from(positions.entries()).map(([symbol, data], index) => (
+                    <Card key={index} className="relative">
+                      <CardHeader className="pb-2">
+                        <div className="flex justify-between items-center">
+                          <CardTitle className="text-xl font-bold">{symbol}</CardTitle>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -576,11 +541,58 @@ const StockChecker = () => {
                           >
                             <XCircle className="h-4 w-4" />
                           </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Shares</span>
+                          <span className="font-medium">{data.amount}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Purchase Price</span>
+                          <span className="font-medium">${data.purchasePrice}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Current Price</span>
+                          <span className="font-medium">${data.currentPrice}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">% Change</span>
+                          <div className="flex items-center">
+                            {Number(data.percentageChange) > 0 ? (
+                              <TrendingUp className="mr-1 h-4 w-4 text-green-500" />
+                            ) : (
+                              <TrendingDown className="mr-1 h-4 w-4 text-red-500" />
+                            )}
+                            <span className={Number(data.percentageChange) > 0 ? "text-green-500" : "text-red-500"}>
+                              {data.percentageChange}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Total Value</span>
+                          <span className="font-medium">${data.totalValue}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Unrealized P/L</span>
+                          <span className={Number(data.profitLoss) > 0 ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                            ${Math.abs(data.profitLoss)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Realized P/L</span>
+                          <span className={Number(realizedPnL.get(symbol) || 0) > 0 ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                            ${Math.abs(realizedPnL.get(symbol) || 0)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Purchase Date</span>
+                          <span className="font-medium">{formatDate(data.purchaseDate)}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
                   No stock positions added yet. Click &quot;Add Stock&quot; to get started.
