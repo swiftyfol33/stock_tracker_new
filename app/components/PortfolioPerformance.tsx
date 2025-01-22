@@ -1,7 +1,6 @@
-// app/components/PortfolioPerformance.tsx
-/* eslint-disable @typescript-eslint */
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { 
   LineChart, 
   Line, 
@@ -9,15 +8,17 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer,
-  TooltipProps 
+  ResponsiveContainer 
 } from 'recharts';
-import { format } from 'date-fns';
+import { format, subDays, subMonths, subYears, startOfYear, isAfter, isFuture } from 'date-fns';
 
+// Types
 interface Position {
   symbol: string;
   shares: number;
   price: number;
+  purchaseDate: Date;
+  purchasePrice: number;
 }
 
 interface PositionHistoryEntry {
@@ -34,116 +35,228 @@ interface PerformanceData {
   percentageChange: number;
 }
 
+interface TimePerformanceData {
+  week: number;
+  month: number;
+  ytd: number;
+  year: number;
+  total: number;
+}
+
 interface PortfolioPerformanceProps {
   positions: Position[];
   positionHistory: PositionHistoryEntry[];
 }
 
-interface CustomTooltipProps extends Omit<TooltipProps<number, string>, 'payload'> {
-  payload?: Array<{
-    value: number;
-  }>;
-}
+type TimeRange = '1D' | '1W' | '1M' | 'YTD' | '1Y' | 'ALL';
 
+// Performance Metrics Component
+const PerformanceMetrics: React.FC<{ data: TimePerformanceData }> = ({ data }) => {
+  const formatPercentage = (value: number) => {
+    return `${value.toFixed(2)}%`;
+  };
+
+  const getTextColor = (value: number) => {
+    return value >= 0 ? 'text-emerald-400' : 'text-red-400';
+  };
+
+  return (
+    <Card className="bg-zinc-900 p-4">
+      <div className="flex justify-between items-center space-x-4 text-sm">
+        <div className="text-center">
+          <div className="text-zinc-400">1 Week</div>
+          <div className={getTextColor(data.week)}>
+            {formatPercentage(data.week)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-zinc-400">1 Month</div>
+          <div className={getTextColor(data.month)}>
+            {formatPercentage(data.month)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-zinc-400">YTD</div>
+          <div className={getTextColor(data.ytd)}>
+            {formatPercentage(data.ytd)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-zinc-400">1 Year</div>
+          <div className={getTextColor(data.year)}>
+            {formatPercentage(data.year)}
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="text-zinc-400">Total</div>
+          <div className={getTextColor(data.total)}>
+            {formatPercentage(data.total)}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+// Main Component
 const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, positionHistory }) => {
   const [performanceData, setPerformanceData] = useState<PerformanceData[]>([]);
+  const [timeMetrics, setTimeMetrics] = useState<TimePerformanceData>({
+    week: 0,
+    month: 0,
+    ytd: 0,
+    year: 0,
+    total: 0
+  });
+  const [selectedRange, setSelectedRange] = useState<TimeRange>('1M');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const getStartDate = (range: TimeRange): Date => {
+    const now = new Date();
+    const earliestPurchaseDate = new Date(Math.min(...positions.map(p => 
+      new Date(p.purchaseDate).getTime()
+    )));
+
+    switch (range) {
+      case '1D':
+        return new Date(Math.max(subDays(now, 1).getTime(), earliestPurchaseDate.getTime()));
+      case '1W':
+        return new Date(Math.max(subDays(now, 7).getTime(), earliestPurchaseDate.getTime()));
+      case '1M':
+        return new Date(Math.max(subMonths(now, 1).getTime(), earliestPurchaseDate.getTime()));
+      case 'YTD':
+        return new Date(Math.max(startOfYear(now).getTime(), earliestPurchaseDate.getTime()));
+      case '1Y':
+        return new Date(Math.max(subYears(now, 1).getTime(), earliestPurchaseDate.getTime()));
+      case 'ALL':
+        return earliestPurchaseDate;
+      default:
+        return new Date(Math.max(subMonths(now, 1).getTime(), earliestPurchaseDate.getTime()));
+    }
+  };
+
+  const calculatePortfolioValue = (date: Date, positionsToCalculate: Position[]) => {
+    return positionsToCalculate.reduce((total, position) => {
+      const purchaseDate = new Date(position.purchaseDate);
+      
+      // If the date is before purchase date, don't include this position
+      if (date < purchaseDate) {
+        return total;
+      }
+
+      // For historical dates, use purchase price plus a linear interpolation
+      // between purchase price and current price
+      if (date < new Date()) {
+        const totalDays = (new Date().getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24);
+        const daysSincePurchase = (date.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24);
+        const progressRatio = daysSincePurchase / totalDays;
+        const priceDifference = position.price - position.purchasePrice;
+        const interpolatedPrice = position.purchasePrice + (priceDifference * progressRatio);
+        return total + (position.shares * interpolatedPrice);
+      }
+
+      // Use current price for today
+      return total + (position.shares * position.price);
+    }, 0);
+  };
+
+  const calculatePerformanceData = (range: TimeRange) => {
+    const startDate = getStartDate(range);
+    const now = new Date();
+    const result: PerformanceData[] = [];
+    
+    // Filter out positions with future purchase dates
+    const validPositions = positions.filter(p => !isFuture(new Date(p.purchaseDate)));
+    
+    if (validPositions.length === 0) {
+      return result;
+    }
+
+    // Calculate the initial investment value using purchase prices
+    const initialInvestment = validPositions.reduce((total, position) => {
+      if (new Date(position.purchaseDate) <= startDate) {
+        return total + (position.shares * position.purchasePrice);
+      }
+      return total;
+    }, 0);
+
+    if (initialInvestment === 0) return result;
+
+    // Generate data points
+    let currentDate = startDate;
+    const dayIncrement = range === '1D' ? 1/24 : 1; // Hourly for 1D, daily for others
+
+    while (currentDate <= now) {
+      const currentValue = calculatePortfolioValue(currentDate, validPositions);
+      const percentageChange = ((currentValue - initialInvestment) / initialInvestment) * 100;
+
+      result.push({
+        date: format(currentDate, 'yyyy-MM-dd HH:mm:ss'),
+        percentageChange: Number(percentageChange.toFixed(2))
+      });
+
+      // Increment based on range
+      currentDate = new Date(currentDate.getTime() + (dayIncrement * 24 * 60 * 60 * 1000));
+    }
+
+    // Add current point if not already added
+    if (result[result.length - 1]?.date !== format(now, 'yyyy-MM-dd HH:mm:ss')) {
+      const finalValue = calculatePortfolioValue(now, validPositions);
+      const finalPercentageChange = ((finalValue - initialInvestment) / initialInvestment) * 100;
+      result.push({
+        date: format(now, 'yyyy-MM-dd HH:mm:ss'),
+        percentageChange: Number(finalPercentageChange.toFixed(2))
+      });
+    }
+
+    return result;
+  };
 
   useEffect(() => {
-    const calculateDailyPerformance = () => {
-      const dailyPerformance: PerformanceData[] = [];
-      const sortedHistory = [...positionHistory].sort((a, b) =>
-        new Date(a.dateOfAction).getTime() - new Date(b.dateOfAction).getTime()
-      );
-
-      if (sortedHistory.length > 0) {
-        // Initialize tracking variables
-        const activePositions = new Map<string, { shares: number; avgPrice: number; initialPrice: number }>();
-        let lastKnownPerformance = 100; // Base value is 100%
-        const dailyValues = new Map<string, number>();
-        
-        // Start with the first entry
-        const firstEntry = sortedHistory[0];
-        const firstDate = format(new Date(firstEntry.dateOfAction), 'yyyy-MM-dd');
-        
-        // Initialize with base value (100%)
-        dailyValues.set(firstDate, 100);
-
-        // Get the current position data
-        const position = positions.find((p: Position) => p.symbol === firstEntry.symbol);
-        if (position) {
-          // Calculate the current performance
-          const percentageChange = ((position.price - firstEntry.price) / firstEntry.price) * 100;
-          const today = format(new Date(), 'yyyy-MM-dd');
-          dailyValues.set(today, 100 + percentageChange);
-        }
-        
-        let portfolioValue = 0;
-        let portfolioCost = 0;
-
-        // Track cost basis for each position
-        const costBasis = new Map<string, number>();
-
-        sortedHistory.forEach((entry) => {
-          const date = format(new Date(entry.dateOfAction), 'yyyy-MM-dd');
-
-          if (entry.type === 'NEW_POSITION' || entry.type === 'INCREASE_POSITION') {
-            portfolioValue += entry.shares * entry.price;
-            portfolioCost += entry.shares * entry.price;
-            costBasis.set(entry.symbol, (costBasis.get(entry.symbol) || 0) + entry.shares * entry.price);
-          } else if (entry.type === 'CLOSE_POSITION' || entry.type === 'PARTIAL_CLOSE') {
-            const positionCost = costBasis.get(entry.symbol) || 0;
-            const realizedGainLoss = entry.shares * entry.price - positionCost;
-            portfolioValue += realizedGainLoss;
-            costBasis.set(entry.symbol, positionCost - entry.shares * entry.price); // subtract from cost basis
-          }
-
-          let performance = 100;
-          if (portfolioCost !== 0) {
-            performance = 100 + ((portfolioValue - portfolioCost) / portfolioCost) * 100;
-          }
-          dailyValues.set(date, performance);
+    const calculatePerformance = async () => {
+      if (positions.length === 0) {
+        setPerformanceData([]);
+        setTimeMetrics({
+          week: 0,
+          month: 0,
+          ytd: 0,
+          year: 0,
+          total: 0
         });
+        return;
+      }
 
-        // Calculate current performance for all open positions
-        let totalCurrentValue = 0;
-        let totalCost = 0;
+      setIsLoading(true);
+      try {
+        // Calculate performance for selected range
+        const data = calculatePerformanceData(selectedRange);
+        setPerformanceData(data);
 
-        positions.forEach((position) => {
-          const openEntry = sortedHistory.find(e => e.symbol === position.symbol && (e.type === 'NEW_POSITION' || e.type === 'INCREASE_POSITION'));
-          if (openEntry) {
-            totalCurrentValue += position.shares * position.price;
-            totalCost += position.shares * openEntry.price;
-          }
-        });
-
-        const today = format(new Date(), 'yyyy-MM-dd');
-        let currentPerformance = 100;
-        if (totalCost !== 0) {
-          currentPerformance = 100 + ((totalCurrentValue - totalCost) / totalCost) * 100;
-        }
-        dailyValues.set(today, currentPerformance);
-
-        // Convert Map to array of performance data points
-        const entries: [string, number][] = Array.from(dailyValues.entries());
-        const consolidatedPerformance: PerformanceData[] = entries.map(
-          ([date, value]) => ({
-            date,
-            percentageChange: value
-          })
-        );
-
-        setPerformanceData(consolidatedPerformance);
+        // Calculate metrics for all time periods
+        const metrics = {
+          week: calculatePerformanceData('1W').slice(-1)[0]?.percentageChange || 0,
+          month: calculatePerformanceData('1M').slice(-1)[0]?.percentageChange || 0,
+          ytd: calculatePerformanceData('YTD').slice(-1)[0]?.percentageChange || 0,
+          year: calculatePerformanceData('1Y').slice(-1)[0]?.percentageChange || 0,
+          total: calculatePerformanceData('ALL').slice(-1)[0]?.percentageChange || 0
+        };
+        
+        setTimeMetrics(metrics);
+      } catch (error) {
+        console.error('Error calculating performance:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    calculateDailyPerformance();
-  }, [positions, positionHistory]);
+    calculatePerformance();
+  }, [positions, selectedRange]);
 
-  const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+  const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-background border rounded p-2 shadow-lg">
-          <p className="text-sm">{format(new Date(label), 'MMM d, yyyy')}</p>
+        <div className="bg-zinc-900 border rounded p-2 shadow-lg">
+          <p className="text-sm">{format(new Date(label), 'MMM d, yyyy HH:mm')}</p>
           <p className="text-sm font-medium text-emerald-500">
             {payload[0].value.toFixed(2)}%
           </p>
@@ -156,26 +269,72 @@ const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, 
   return (
     <Card className="w-full max-w-6xl mx-auto">
       <CardHeader>
-        <CardTitle>Portfolio Performance</CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle>Portfolio Performance</CardTitle>
+          <div className="flex space-x-2">
+            {(['1D', '1W', '1M', 'YTD', '1Y', 'ALL'] as TimeRange[]).map((range) => (
+              <Button
+                key={range}
+                variant={selectedRange === range ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedRange(range)}
+                className="px-3 py-1 text-sm"
+                disabled={isLoading}
+              >
+                {range}
+              </Button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="h-96 w-full">
-          {performanceData.length > 0 ? (
+        <PerformanceMetrics data={timeMetrics} />
+        <div className="h-96 w-full mt-4">
+          {isLoading ? (
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+              Loading performance data...
+            </div>
+          ) : performanceData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={performanceData} margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
+              <LineChart 
+                data={performanceData}
+                margin={{ top: 5, right: 20, bottom: 5, left: 40 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM d')} />
+                <XAxis 
+                  dataKey="date" 
+                  tickFormatter={(date) => {
+                    const dateObj = new Date(date);
+                    switch (selectedRange) {
+                      case '1D':
+                        return format(dateObj, 'HH:mm');
+                      case '1W':
+                        return format(dateObj, 'EEE');
+                      case '1M':
+                      case 'YTD':
+                      case '1Y':
+                      case 'ALL':
+                      default:
+                        return format(dateObj, 'MMM d');
+                    }
+                  }}
+                />
                 <YAxis
                   tickFormatter={(value) => `${value.toFixed(2)}%`}
                   domain={[
-                    (dataMin: number) => Math.min(100, Math.floor(dataMin - 5)),
-                    (dataMax: number) => Math.max(100, Math.ceil(dataMax + 5))
+                    (dataMin: number) => Math.floor(Math.min(dataMin, 0) - 5),
+                    (dataMax: number) => Math.ceil(Math.max(dataMax, 0) + 5)
                   ]}
-                  style={{ fontSize: '12px' }}
                   width={60}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="percentageChange" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Line 
+                  type="monotone" 
+                  dataKey="percentageChange" 
+                  stroke="#10b981" 
+                  strokeWidth={2} 
+                  dot={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           ) : (
