@@ -1,10 +1,10 @@
+
 "use client";
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import PortfolioPerformance from "@/app/components/PortfolioPerformance"
 import {
   Table,
@@ -115,41 +115,6 @@ const StockChecker = () => {
   const [closeAmount, setCloseAmount] = useState('');
   const [closeType, setCloseType] = useState('full');
   const [positionHistory, setPositionHistory] = useState<PositionHistoryEntry[]>([]);
-  const [fetchPriceEnabled, setFetchPriceEnabled] = useState(true);
-
-  const [isFetching, setIsFetching] = useState(false);
-const [currentFetchedPrice, setCurrentFetchedPrice] = useState<number | null>(null);
-
-const fetchPrice = async () => {
-  if (!stockSymbol) {
-    setErrorMessage('Please enter a stock symbol first.');
-    return;
-  }
-  
-  setIsFetching(true);
-  try {
-    const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
-    const response = await axios.get(
-      `https://finnhub.io/api/v1/quote?symbol=${stockSymbol.toUpperCase()}&token=${API_KEY}`
-    );
-
-    if (!response.data || !response.data.c) {
-      setErrorMessage('Not a real stock.');
-      setCurrentFetchedPrice(null);
-      return;
-    }
-    
-    setCurrentFetchedPrice(response.data.c);
-    setPurchasePrice(response.data.c.toString());
-    setErrorMessage('');
-  } catch (error) {
-    console.error('Error fetching stock price:', error);
-    setErrorMessage('Error fetching stock price. Please try again.');
-    setCurrentFetchedPrice(null);
-  } finally {
-    setIsFetching(false);
-  }
-};
 
   // Listen for auth state changes
   useEffect(() => {
@@ -233,8 +198,7 @@ const fetchPrice = async () => {
   };
 
   const fetchIndustry = async (symbol: string) => {
-    const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
-    
+    const API_KEY = "cu5337hr01qo4c10s9agcu5337hr01qo4c10s9b0";
     try {
       const response = await axios.get(
         `https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${API_KEY}`
@@ -285,77 +249,84 @@ const fetchPrice = async () => {
       setErrorMessage('Please fill in all fields.');
       return;
     }
-  
+
     try {
       setErrorMessage('');
-      const symbol = stockSymbol.toUpperCase();
-      const currentPrice = fetchPriceEnabled ? currentFetchedPrice || Number(purchasePrice) : Number(purchasePrice);
-      
-      const positionRef = doc(db, `users/${userId}/positions/${symbol}`);
-      
-      if (positions.has(symbol)) {
-        // Update existing position
-        const existingPosition = positions.get(symbol);
-        const totalShares = existingPosition.amount + Number(amount);
-        const newAvgPrice = ((existingPosition.amount * existingPosition.purchasePrice) + 
-                           (Number(amount) * Number(purchasePrice))) / totalShares;
+      const API_KEY = 'cu5337hr01qo4c10s9agcu5337hr01qo4c10s9b0';
+      const response = await axios.get(
+        `https://finnhub.io/api/v1/quote?symbol=${stockSymbol.toUpperCase()}&token=${API_KEY}`
+      );
+
+      const data = response.data;
+      if (data && data.c) {
+        const currentPrice = data.c;
+        const symbol = stockSymbol.toUpperCase();
+        const positionRef = doc(db, `users/${userId}/positions/${symbol}`);
         
-        const updatedPosition = {
-          amount: totalShares,
-          purchasePrice: Number(newAvgPrice.toFixed(2)),
-          currentPrice: Number(currentPrice.toFixed(2)),
-          percentageChange: ((currentPrice - newAvgPrice) / newAvgPrice * 100).toFixed(2),
-          totalValue: (currentPrice * totalShares).toFixed(2),
-          profitLoss: ((currentPrice * totalShares) - (newAvgPrice * totalShares)).toFixed(2),
-          purchaseDate: date
-        };
-  
-        await updateDoc(positionRef, updatedPosition);
+        if (positions.has(symbol)) {
+          // Update existing position
+          const existingPosition = positions.get(symbol);
+          const totalShares = existingPosition.amount + Number(amount);
+          const newAvgPrice = ((existingPosition.amount * existingPosition.purchasePrice) + 
+                             (Number(amount) * Number(purchasePrice))) / totalShares;
+          
+          const updatedPosition = {
+            amount: totalShares,
+            purchasePrice: Number(newAvgPrice.toFixed(2)),
+            currentPrice: Number(currentPrice.toFixed(2)),
+            percentageChange: ((currentPrice - newAvgPrice) / newAvgPrice * 100).toFixed(2),
+            totalValue: (currentPrice * totalShares).toFixed(2),
+            profitLoss: ((currentPrice * totalShares) - (newAvgPrice * totalShares)).toFixed(2),
+            purchaseDate: date
+          };
+
+          await updateDoc(positionRef, updatedPosition);
+          
+          // Add to history
+          await addDoc(collection(db, `users/${userId}/history`), {
+            type: 'INCREASE_POSITION',
+            symbol,
+            shares: Number(amount),
+            price: Number(purchasePrice),
+            totalShares,
+            newAveragePrice: newAvgPrice.toFixed(2),
+            timestamp: serverTimestamp()
+          });
+
+        } else {
+          // Add new position
+          const newPosition = {
+            currentPrice: Number(currentPrice.toFixed(2)),
+            purchasePrice: Number(purchasePrice),
+            amount: Number(amount),
+            purchaseDate: date,            percentageChange: ((currentPrice - Number(purchasePrice)) / Number(purchasePrice) * 100).toFixed(2),
+            totalValue: (currentPrice * Number(amount)).toFixed(2),
+            profitLoss: ((currentPrice * Number(amount)) - (Number(purchasePrice) * Number(amount))).toFixed(2)
+          };
+
+          await setDoc(positionRef, newPosition);
+
+          // Add to history
+          await addDoc(collection(db, `users/${userId}/history`), {
+            type: 'NEW_POSITION',
+            symbol,
+            shares: Number(amount),
+            price: Number(purchasePrice),
+            timestamp: serverTimestamp(),
+            dateOfAction: date
+          });
+        }
+
+        // Refresh data
+        await loadUserData(userId);
         
-        // Add to history
-        await addDoc(collection(db, `users/${userId}/history`), {
-          type: 'INCREASE_POSITION',
-          symbol,
-          shares: Number(amount),
-          price: Number(purchasePrice),
-          totalShares,
-          newAveragePrice: newAvgPrice.toFixed(2),
-          timestamp: serverTimestamp()
-        });
-  
+        setStockSymbol('');
+        setAmount('');
+        setPurchasePrice('');
+        setIsAddDialogOpen(false);
       } else {
-        // Add new position
-        const newPosition = {
-          currentPrice: Number(currentPrice.toFixed(2)),
-          purchasePrice: Number(purchasePrice),
-          amount: Number(amount),
-          purchaseDate: date,
-          percentageChange: ((currentPrice - Number(purchasePrice)) / Number(purchasePrice) * 100).toFixed(2),
-          totalValue: (currentPrice * Number(amount)).toFixed(2),
-          profitLoss: ((currentPrice * Number(amount)) - (Number(purchasePrice) * Number(amount))).toFixed(2)
-        };
-  
-        await setDoc(positionRef, newPosition);
-  
-        // Add to history
-        await addDoc(collection(db, `users/${userId}/history`), {
-          type: 'NEW_POSITION',
-          symbol,
-          shares: Number(amount),
-          price: Number(purchasePrice),
-          timestamp: serverTimestamp(),
-          dateOfAction: date
-        });
+        setErrorMessage('Not a real stock.');
       }
-  
-      // Refresh data
-      await loadUserData(userId);
-      
-      setStockSymbol('');
-      setAmount('');
-      setPurchasePrice('');
-      setCurrentFetchedPrice(null);
-      setIsAddDialogOpen(false);
     } catch (error) {
       console.error('Error adding stock:', error);
       setErrorMessage('Error adding stock position. Please try again.');
@@ -366,7 +337,7 @@ const fetchPrice = async () => {
     if (!userId || !selectedPosition) return;
     
     try {
-      const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+      const API_KEY = 'cu5337hr01qo4c10s9agcu5337hr01qo4c10s9b0';
       const response = await axios.get(
         `https://finnhub.io/api/v1/quote?symbol=${selectedPosition.symbol}&token=${API_KEY}`
       );
@@ -415,14 +386,16 @@ const fetchPrice = async () => {
           totalValue: (currentPrice * remainingShares).toFixed(2),
           profitLoss: ((currentPrice - selectedPosition.data.purchasePrice) * remainingShares).toFixed(2)
         });
-        // Refresh data
-        await loadUserData(userId);
-        
-        setIsCloseDialogOpen(false);
-        setSelectedPosition(null);
-        setCloseAmount('');
-        setCloseType('full');
       }
+
+      // Refresh data
+      await loadUserData(userId);
+      
+      setIsCloseDialogOpen(false);
+      setSelectedPosition(null);
+      setCloseAmount('');
+      setCloseType('full');
+      
     } catch (error) {
       console.error('Error closing position:', error);
       setErrorMessage('Error closing position. Please try again.');
@@ -495,92 +468,59 @@ const fetchPrice = async () => {
                     Add Stock
                   </Button>
                 </DialogTrigger>
-
                 <DialogContent>
-  <DialogHeader>
-    <DialogTitle>Add New Stock Position</DialogTitle>
-  </DialogHeader>
-  <div className="grid gap-4 py-4">
-    <div className="space-y-2">
-      <Input
-        type="text"
-        placeholder="Enter stock symbol (e.g., AAPL)"
-        value={stockSymbol}
-        onChange={(e) => setStockSymbol(e.target.value)}
-      />
-    </div>
-    <div className="flex items-center justify-between">
-      <Label htmlFor="fetch-price">Enable Price Fetching</Label>
-      <Switch
-        id="fetch-price"
-        checked={fetchPriceEnabled}
-        onCheckedChange={(checked) => {
-          setFetchPriceEnabled(checked);
-          if (!checked) {
-            setCurrentFetchedPrice(null);
-          }
-        }}
-      />
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Input
-        type="number"
-        placeholder="Number of shares"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-      />
-      <div className="space-y-2">
-        <Input
-          type="number"
-          placeholder="Purchase price per share"
-          value={purchasePrice}
-          onChange={(e) => setPurchasePrice(e.target.value)}
-        />
-        {fetchPriceEnabled && (
-          <Button 
-            variant="outline" 
-            className="w-full mt-2"
-            onClick={fetchPrice}
-            disabled={isFetching}
-          >
-            {isFetching ? 'Fetching...' : 'Fetch Current Price'}
-          </Button>
-        )}
-        {currentFetchedPrice !== null && (
-          <p className="text-sm text-muted-foreground mt-1">
-            Fetched Price: ${currentFetchedPrice.toFixed(2)}
-          </p>
-        )}
-      </div>
-    </div>
-    <div className="space-y-2">
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="w-full justify-start text-left font-normal">
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {date ? format(date, "PPP") : <span>Pick a date</span>}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={(day: Date | undefined) => day && setDate(day)}
-            initialFocus
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-    {errorMessage && (
-      <Alert variant="destructive">
-        <AlertDescription>{errorMessage}</AlertDescription>
-      </Alert>
-    )}
-    <Button onClick={handleAddStock}>Add Position</Button>
-  </div>
-</DialogContent>
-
-
+                  <DialogHeader>
+                    <DialogTitle>Add New Stock Position</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder="Enter stock symbol (e.g., AAPL)"
+                        value={stockSymbol}
+                        onChange={(e) => setStockSymbol(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input
+                        type="number"
+                        placeholder="Number of shares"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Purchase price per share"
+                        value={purchasePrice}
+                        onChange={(e) => setPurchasePrice(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date ? format(date, "PPP") : <span>Pick a date</span>}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={date}
+                            onSelect={(day: Date | undefined) => day && setDate(day)}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    {errorMessage && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{errorMessage}</AlertDescription>
+                      </Alert>
+                    )}
+                    <Button onClick={handleAddStock}>Add Position</Button>
+                  </div>
+                </DialogContent>
               </Dialog>
             </CardHeader>
             <CardContent>
@@ -707,21 +647,21 @@ const fetchPrice = async () => {
           </Card>
 
           <PortfolioPerformance 
-            positions={Array.from(positions, ([symbol, data]) => ({
-              symbol,
-              shares: data.amount,
-              price: data.currentPrice,
-              purchasePrice: data.purchasePrice,
-              purchaseDate: data.purchaseDate instanceof Date ? 
-                data.purchaseDate : 
-                new Date(data.purchaseDate)
-            }))} 
-            positionHistory={positionHistory.map(entry => ({
-              ...entry,
-              timestamp: entry.timestamp.toString(),
-              dateOfAction: entry.dateOfAction.toString()
-            }))} 
-          />
+  positions={Array.from(positions, ([symbol, data]) => ({
+    symbol,
+    shares: data.amount,
+    price: data.currentPrice,
+    purchasePrice: data.purchasePrice,
+    purchaseDate: data.purchaseDate instanceof Date ? 
+      data.purchaseDate : 
+      new Date(data.purchaseDate)
+  }))} 
+  positionHistory={positionHistory.map(entry => ({
+    ...entry,
+    timestamp: entry.timestamp.toString(),
+    dateOfAction: entry.dateOfAction.toString()
+  }))} 
+/>
 
           <Card className="w-full max-w-6xl mx-auto">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -789,24 +729,23 @@ const fetchPrice = async () => {
                         {entry.type === 'INCREASE_POSITION' && 
                           `New Avg: ${entry.newAveragePrice} (Total: ${entry.totalShares} shares)`}
                         {(entry.type === 'PARTIAL_CLOSE' || entry.type === 'CLOSE_POSITION') && 
-                          `P/L: ${Number(entry.realizedGain
-                          ) >= 0 ? '+' : ''}${entry.realizedGain}`}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {positionHistory.length === 0 && (
-                    <div className="text-center py-6 text-muted-foreground">
-                      No position history yet. Actions will appear here when you start trading.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </div>
-      );
-    };
-    
-    export default StockChecker;
+                          `P/L: ${Number(entry.realizedGain) >= 0 ? '+' : ''}${entry.realizedGain}`}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {positionHistory.length === 0 && (
+                <div className="text-center py-6 text-muted-foreground">
+                  No position history yet. Actions will appear here when you start trading.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default StockChecker;
