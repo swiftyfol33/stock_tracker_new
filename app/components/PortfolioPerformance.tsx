@@ -61,34 +61,34 @@ const PerformanceMetrics: React.FC<{ data: TimePerformanceData }> = ({ data }) =
   };
 
   return (
-    <Card className="bg-zinc-900 p-4">
+    <Card>
       <div className="flex justify-between items-center space-x-4 text-sm">
         <div className="text-center">
-          <div className="text-zinc-400">1 Week</div>
+          <div className="text-muted-foreground">1 Week</div>
           <div className={getTextColor(data.week)}>
             {formatPercentage(data.week)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-zinc-400">1 Month</div>
+          <div className="text-muted-foreground">1 Month</div>
           <div className={getTextColor(data.month)}>
             {formatPercentage(data.month)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-zinc-400">YTD</div>
+          <div className="text-muted-foreground">YTD</div>
           <div className={getTextColor(data.ytd)}>
             {formatPercentage(data.ytd)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-zinc-400">1 Year</div>
+          <div className="text-muted-foreground">1 Year</div>
           <div className={getTextColor(data.year)}>
             {formatPercentage(data.year)}
           </div>
         </div>
         <div className="text-center">
-          <div className="text-zinc-400">Total</div>
+          <div className="text-muted-foreground">Total</div>
           <div className={getTextColor(data.total)}>
             {formatPercentage(data.total)}
           </div>
@@ -255,8 +255,8 @@ const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-zinc-900 border rounded p-2 shadow-lg">
-          <p className="text-sm">{format(new Date(label), 'MMM d, yyyy HH:mm')}</p>
+        <div className="bg-card border rounded p-2 shadow-lg">
+          <p className="text-sm text-foreground">{format(new Date(label), 'MMM d, yyyy HH:mm')}</p>
           <p className="text-sm font-medium text-emerald-500">
             {payload[0].value.toFixed(2)}%
           </p>
@@ -300,7 +300,7 @@ const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, 
                 data={performanceData}
                 margin={{ top: 5, right: 20, bottom: 5, left: 40 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" />
                 <XAxis 
                   dataKey="date" 
                   tickFormatter={(date) => {
@@ -318,6 +318,8 @@ const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, 
                         return format(dateObj, 'MMM d');
                     }
                   }}
+                  stroke="currentColor"
+                  className="text-muted-foreground"
                 />
                 <YAxis
                   tickFormatter={(value) => `${value.toFixed(2)}%`}
@@ -326,14 +328,17 @@ const PortfolioPerformance: React.FC<PortfolioPerformanceProps> = ({ positions, 
                     (dataMax: number) => Math.ceil(Math.max(dataMax, 0) + 5)
                   ]}
                   width={60}
+                  stroke="currentColor"
+                  className="text-muted-foreground"
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line 
                   type="monotone" 
                   dataKey="percentageChange" 
-                  stroke="#10b981" 
+                  stroke="currentColor" 
                   strokeWidth={2} 
                   dot={false}
+                  className="text-primary"
                 />
               </LineChart>
             </ResponsiveContainer>
